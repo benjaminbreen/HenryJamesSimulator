@@ -38,7 +38,7 @@ export interface WorldNode {
 
 export interface Feature {
   id: string;
-  type: 'furniture' | 'exhibit' | 'decoration' | 'interactive';
+  type: 'furniture' | 'exhibit' | 'decoration' | 'interactive' | 'vegetation';
   name: string;
   description: string;
   ascii: string;
