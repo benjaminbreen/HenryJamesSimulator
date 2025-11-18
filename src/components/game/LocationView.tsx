@@ -11,6 +11,7 @@ const LocationView = () => {
     world,
     moveToNode,
     getCurrentNode,
+    getNPCsInNode,
     startCombat,
     addItem,
     addLog,
@@ -32,7 +33,9 @@ const LocationView = () => {
     );
   }
 
-  const npcsHere = currentNode.npcs.map((id) => NPCS[id]).filter(Boolean);
+  // Get both historical NPCs and agentic NPCs
+  const historicalNPCs = currentNode.npcs.map((id) => NPCS[id]).filter(Boolean);
+  const agenticNPCs = getNPCsInNode(currentNode.id);
   const availableEvents = getAvailableEvents(currentNode.id, player.level, completedEvents);
 
   const handleExplore = () => {
@@ -156,18 +159,19 @@ const LocationView = () => {
       </div>
 
       {/* NPCs */}
-      {npcsHere.length > 0 && (
+      {(historicalNPCs.length > 0 || agenticNPCs.length > 0) && (
         <div className="ornate-border bg-white dark:bg-belle-navy/30 p-6 space-y-4">
           <h3 className="text-2xl font-display text-belle-burgundy dark:text-belle-gold">
-            Notable Persons Present
+            Notable Persons Present {agenticNPCs.length > 0 && <span className="text-sm opacity-70">({historicalNPCs.length + agenticNPCs.length})</span>}
           </h3>
           <div className="space-y-3">
-            {npcsHere.map((npc) => (
-              <div key={npc.id} className="border-2 border-belle-gold/30 rounded-lg p-4 space-y-2">
+            {/* Historical NPCs (famous figures) */}
+            {historicalNPCs.map((npc) => (
+              <div key={npc.id} className="border-2 border-belle-burgundy/50 rounded-lg p-4 space-y-2">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <h4 className="text-xl font-display text-belle-burgundy dark:text-belle-gold">
-                      {npc.name}
+                      {npc.name} <span className="text-xs opacity-70">⭐ Historical Figure</span>
                     </h4>
                     <p className="text-sm text-belle-navy/70 dark:text-belle-cream/70">
                       {npc.title}
@@ -201,6 +205,60 @@ const LocationView = () => {
                       full implementation, you would engage in LLM-powered dialogue here, with
                       their personality and historical context shaping their responses. Use the
                       Challenge button to engage in wit-based combat instead.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Agentic NPCs (procedural characters) */}
+            {agenticNPCs.map((npc) => (
+              <div key={npc.id} className="border-2 border-belle-gold/30 rounded-lg p-4 space-y-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h4 className="text-xl font-display text-belle-burgundy dark:text-belle-gold">
+                      {npc.name}
+                    </h4>
+                    <p className="text-sm text-belle-navy/70 dark:text-belle-cream/70">
+                      {npc.profession}, Age {npc.age}
+                    </p>
+                    <p className="text-xs text-belle-navy/60 dark:text-belle-cream/60 mt-1">
+                      Currently {npc.currentActivity} • {npc.mood}
+                    </p>
+                    <p className="text-sm text-belle-navy dark:text-belle-cream mt-2 italic">
+                      {npc.backstory.slice(0, 150)}...
+                    </p>
+                    {npc.currentGoal && (
+                      <p className="text-xs text-belle-sage dark:text-belle-sage mt-1">
+                        Goal: {npc.currentGoal.description}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedNPC(selectedNPC === npc.id ? null : npc.id)}
+                    className="px-3 py-1 bg-belle-sage text-belle-navy rounded hover:bg-belle-sage/90 transition-all text-sm"
+                  >
+                    💬 Converse
+                  </button>
+                  <button
+                    onClick={() => console.log('Challenge NPC:', npc.name)}
+                    className="px-3 py-1 bg-belle-gold/30 text-belle-navy dark:text-belle-cream rounded hover:bg-belle-gold/40 transition-all text-sm"
+                  >
+                    ℹ️ Observe
+                  </button>
+                </div>
+                {selectedNPC === npc.id && (
+                  <div className="mt-2 p-3 bg-belle-cream/50 dark:bg-black/20 rounded text-sm space-y-2">
+                    <p className="text-belle-navy dark:text-belle-cream">
+                      <span className="font-semibold">{npc.name}</span> looks at you with interest.
+                    </p>
+                    <div className="text-xs text-belle-navy/70 dark:text-belle-cream/70">
+                      Recent thoughts: "{npc.recentThoughts[0]}"
+                    </div>
+                    <p className="text-belle-navy/80 dark:text-belle-cream/80 italic text-xs">
+                      LLM-powered dialogue coming soon! This NPC has a full AI brain with personality, goals, and history.
                     </p>
                   </div>
                 )}

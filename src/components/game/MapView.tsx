@@ -2,7 +2,7 @@ import { useGameStore } from '../../stores/gameStore';
 import WorldMapView from '../map/WorldMapView';
 
 const MapView = () => {
-  const { world, currentNodeId, moveToNode, setView, getCurrentNode } = useGameStore();
+  const { world, currentNodeId, agenticNPCs, moveToNode, setView, getCurrentNode } = useGameStore();
 
   const currentNode = getCurrentNode();
 
@@ -17,6 +17,11 @@ const MapView = () => {
   const handleNodeClick = (nodeId: string) => {
     moveToNode(nodeId);
     setView('main');
+  };
+
+  const handleNPCClick = (npc: any) => {
+    // TODO: Open dialogue modal
+    console.log('Clicked NPC:', npc.name, npc.profession);
   };
 
   // Get all discovered nodes, sorted by type (anchors first) then by visited status
@@ -68,7 +73,9 @@ const MapView = () => {
         <WorldMapView
           world={world}
           currentNodeId={currentNodeId}
+          agenticNPCs={agenticNPCs}
           onNodeClick={handleNodeClick}
+          onNPCClick={handleNPCClick}
         />
 
         {/* Quick Travel List (below map) */}

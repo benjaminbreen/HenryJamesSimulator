@@ -1,19 +1,24 @@
 import type { WorldGraph, WorldNode } from '../../types/procedural';
+import type { AgenticNPC } from '../../types/npc';
 import { NodeMarker, ConnectionPath, TILE_SIZE } from './MapTiles';
+import { NPCSprite } from './NPCSprite';
 import { useMemo, useState } from 'react';
 
 interface WorldMapViewProps {
   world: WorldGraph;
   currentNodeId: string;
+  agenticNPCs: Map<string, AgenticNPC>;
   onNodeClick: (nodeId: string) => void;
+  onNPCClick?: (npc: AgenticNPC) => void;
 }
 
 /**
  * Renders the entire world as an SNES-style RPG map
  * Shows nodes as locations on a rendered terrain with connections
  */
-export const WorldMapView = ({ world, currentNodeId, onNodeClick }: WorldMapViewProps) => {
+export const WorldMapView = ({ world, currentNodeId, agenticNPCs, onNodeClick, onNPCClick }: WorldMapViewProps) => {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [hoveredNPC, setHoveredNPC] = useState<string | null>(null);
 
   // Calculate map bounds and scale
   const { minX, maxX, minY, maxY, scaledNodes } = useMemo(() => {
@@ -225,6 +230,77 @@ export const WorldMapView = ({ world, currentNodeId, onNodeClick }: WorldMapView
             </g>
           );
         })}
+
+        {/* Animated NPCs */}
+        {Array.from(agenticNPCs.values())
+          .filter(npc => {
+            // Only show NPCs in discovered nodes
+            const npcNode = world.nodes.get(npc.position.nodeId);
+            return npcNode?.discovered;
+          })
+          .map((npc) => {
+            const npcNode = scaledNodes.find(n => n.id === npc.position.nodeId);
+            if (!npcNode) return null;
+
+            // Position NPC near their node marker with slight offset
+            const offsetX = (Math.abs(parseInt(npc.id.slice(-4), 16)) % 30) - 15;
+            const offsetY = (Math.abs(parseInt(npc.id.slice(-8, -4), 16)) % 30) - 15;
+
+            return (
+              <g
+                key={npc.id}
+                onMouseEnter={() => setHoveredNPC(npc.id)}
+                onMouseLeave={() => setHoveredNPC(null)}
+              >
+                <NPCSprite
+                  npcId={npc.id}
+                  name={npc.name}
+                  profession={npc.profession}
+                  gender={npc.gender}
+                  x={npcNode.screenX + offsetX}
+                  y={npcNode.screenY + offsetY}
+                  direction={npc.direction}
+                  isWalking={npc.isMoving}
+                  seed={npc.seed}
+                  onClick={() => onNPCClick?.(npc)}
+                />
+
+                {/* Show NPC info on hover */}
+                {hoveredNPC === npc.id && (
+                  <g transform={`translate(${npcNode.screenX + offsetX}, ${npcNode.screenY + offsetY - 55})`}>
+                    <rect
+                      x="-70"
+                      y="-35"
+                      width="140"
+                      height="30"
+                      fill="#2A2A2A"
+                      rx="4"
+                      opacity="0.95"
+                    />
+                    <text
+                      x="0"
+                      y="-20"
+                      textAnchor="middle"
+                      fontSize="10"
+                      fill="#D4AF37"
+                      fontWeight="bold"
+                    >
+                      {npc.name}
+                    </text>
+                    <text
+                      x="0"
+                      y="-8"
+                      textAnchor="middle"
+                      fontSize="8"
+                      fill="#E8DCC8"
+                    >
+                      {npc.profession} • {npc.currentActivity}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
 
         {/* Legend */}
         <g transform={`translate(${viewWidth - 180}, 20)`}>
