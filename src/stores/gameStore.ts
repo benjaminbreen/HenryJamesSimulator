@@ -20,6 +20,7 @@ import { NPCS } from '../constants/npcs';
 import { getAvailableMoves } from '../constants/combatMoves';
 import { generateWorld } from '../systems/worldGenerator';
 import { NPCAgentSystem } from '../systems/npcAgentSystem';
+import { geminiService } from '../services/geminiService';
 
 // Global NPC agent system (not persisted)
 let npcAgentSystem: NPCAgentSystem | null = null;
@@ -100,6 +101,20 @@ interface GameState {
   // Book Reader
   readingBook: Item | null;
   setReadingBook: (book: Item | null) => void;
+
+  // NPC Dialogue
+  activeDialogue: {
+    npcId: string;
+    conversationHistory: Array<{
+      speaker: 'player' | 'npc';
+      message: string;
+      timestamp: number;
+    }>;
+  } | null;
+  startDialogue: (npcId: string) => void;
+  sendDialogueMessage: (message: string) => Promise<void>;
+  endDialogue: () => void;
+  isDialogueLoading: boolean;
 }
 
 const initialPlayer: Player = {
@@ -167,6 +182,8 @@ export const useGameStore = create<GameState>()(
       settings: initialSettings,
       factCheckVisible: false,
       readingBook: null,
+      activeDialogue: null,
+      isDialogueLoading: false,
 
       // Screen & View
       setScreen: (screen) => set({ currentScreen: screen }),
@@ -740,6 +757,156 @@ Generated: ${new Date().toLocaleString()}
       // UI State
       setFactCheckVisible: (visible) => set({ factCheckVisible: visible }),
       setReadingBook: (book) => set({ readingBook: book, currentView: book ? 'book-reader' : 'main' }),
+
+      // NPC Dialogue
+      startDialogue: (npcId: string) => {
+        const npc = get().agenticNPCs.get(npcId);
+        if (!npc) {
+          console.error('NPC not found:', npcId);
+          return;
+        }
+
+        set({
+          activeDialogue: {
+            npcId,
+            conversationHistory: [],
+          },
+        });
+
+        get().addLog({
+          type: 'info',
+          message: `You begin a conversation with ${npc.name}.`,
+          icon: '💬',
+        });
+      },
+
+      sendDialogueMessage: async (message: string) => {
+        const { activeDialogue, agenticNPCs, player, world, currentNodeId } = get();
+        if (!activeDialogue) return;
+
+        const npc = agenticNPCs.get(activeDialogue.npcId);
+        if (!npc) return;
+
+        const currentNode = world?.nodes.get(currentNodeId);
+        if (!currentNode) return;
+
+        // Add player message to history
+        const playerMessage = {
+          speaker: 'player' as const,
+          message,
+          timestamp: Date.now(),
+        };
+
+        set({
+          activeDialogue: {
+            ...activeDialogue,
+            conversationHistory: [...activeDialogue.conversationHistory, playerMessage],
+          },
+          isDialogueLoading: true,
+        });
+
+        try {
+          // Call Gemini API
+          const response = await geminiService.generateDialogue({
+            npc,
+            playerMessage: message,
+            playerName: player.name,
+            playerProfession: player.title,
+            locationName: currentNode.name,
+            locationDescription: currentNode.description,
+          });
+
+          // Add NPC response to history
+          const npcMessage = {
+            speaker: 'npc' as const,
+            message: response.message,
+            timestamp: Date.now(),
+          };
+
+          set({
+            activeDialogue: {
+              ...activeDialogue,
+              conversationHistory: [
+                ...get().activeDialogue!.conversationHistory,
+                npcMessage,
+              ],
+            },
+            isDialogueLoading: false,
+          });
+
+          // Update NPC state based on response
+          if (response.mood) {
+            get().updateNPC(npc.id, { mood: response.mood });
+          }
+
+          if (response.newThought) {
+            const updatedNPC = get().agenticNPCs.get(npc.id);
+            if (updatedNPC) {
+              get().updateNPC(npc.id, {
+                recentThoughts: [response.newThought, ...updatedNPC.recentThoughts.slice(0, 4)],
+              });
+            }
+          }
+
+          // Add to NPC's conversation history
+          get().updateNPC(npc.id, {
+            conversationHistory: [
+              ...npc.conversationHistory,
+              {
+                with: player.name,
+                timestamp: Date.now(),
+                summary: `Discussed: ${message.slice(0, 50)}...`,
+              },
+            ],
+          });
+
+          // Award small XP for conversation
+          get().addXP(5);
+
+        } catch (error) {
+          console.error('Error in dialogue:', error);
+
+          // Fallback response
+          const fallbackMessage = {
+            speaker: 'npc' as const,
+            message: `I... forgive me, I seem to have lost my train of thought. Perhaps we could speak again later?`,
+            timestamp: Date.now(),
+          };
+
+          set({
+            activeDialogue: {
+              ...activeDialogue,
+              conversationHistory: [
+                ...get().activeDialogue!.conversationHistory,
+                fallbackMessage,
+              ],
+            },
+            isDialogueLoading: false,
+          });
+
+          get().addLog({
+            type: 'warning',
+            message: 'The conversation encountered an issue.',
+            icon: '⚠️',
+          });
+        }
+      },
+
+      endDialogue: () => {
+        const { activeDialogue, agenticNPCs } = get();
+        if (!activeDialogue) return;
+
+        const npc = agenticNPCs.get(activeDialogue.npcId);
+        if (npc && activeDialogue.conversationHistory.length > 0) {
+          get().addLog({
+            type: 'success',
+            message: `Your conversation with ${npc.name} has concluded.`,
+            icon: '👋',
+          });
+        }
+
+        set({ activeDialogue: null, isDialogueLoading: false });
+      },
     }),
     {
       name: 'henry-james-game',

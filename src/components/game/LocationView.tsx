@@ -4,6 +4,7 @@ import { NPCS } from '../../constants/npcs';
 import { getAvailableEvents } from '../../constants/events';
 import { generateItem } from '../../utils/itemGenerator';
 import RoomTileMap from '../map/RoomTileMap';
+import DialogueModal from './DialogueModal';
 
 const LocationView = () => {
   const {
@@ -18,6 +19,11 @@ const LocationView = () => {
     triggerEvent,
     completedEvents,
     setView,
+    startDialogue,
+    endDialogue,
+    sendDialogueMessage,
+    activeDialogue,
+    isDialogueLoading,
   } = useGameStore();
 
   const [selectedNPC, setSelectedNPC] = useState<string | null>(null);
@@ -237,16 +243,16 @@ const LocationView = () => {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setSelectedNPC(selectedNPC === npc.id ? null : npc.id)}
+                    onClick={() => startDialogue(npc.id)}
                     className="px-3 py-1 bg-belle-sage text-belle-navy rounded hover:bg-belle-sage/90 transition-all text-sm"
                   >
                     💬 Converse
                   </button>
                   <button
-                    onClick={() => console.log('Challenge NPC:', npc.name)}
+                    onClick={() => setSelectedNPC(selectedNPC === npc.id ? null : npc.id)}
                     className="px-3 py-1 bg-belle-gold/30 text-belle-navy dark:text-belle-cream rounded hover:bg-belle-gold/40 transition-all text-sm"
                   >
-                    ℹ️ Observe
+                    ℹ️ {selectedNPC === npc.id ? 'Hide' : 'Details'}
                   </button>
                 </div>
                 {selectedNPC === npc.id && (
@@ -318,6 +324,26 @@ const LocationView = () => {
           })}
         </div>
       </div>
+
+      {/* Dialogue Modal */}
+      {activeDialogue && (() => {
+        const dialogueNPC = agenticNPCs.find(npc => npc.id === activeDialogue.npcId);
+        if (!dialogueNPC) return null;
+
+        return (
+          <DialogueModal
+            npc={dialogueNPC}
+            playerName={player.name}
+            playerProfession={player.title}
+            locationName={currentNode.name}
+            locationDescription={currentNode.description}
+            onClose={endDialogue}
+            onSendMessage={sendDialogueMessage}
+            conversationHistory={activeDialogue.conversationHistory}
+            isLoading={isDialogueLoading}
+          />
+        );
+      })()}
     </div>
   );
 };
