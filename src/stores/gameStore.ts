@@ -13,9 +13,11 @@ import type {
   GameEvent,
   NPCId,
 } from '../types/game';
+import type { WorldGraph, WorldNode } from '../types/procedural';
 import { LOCATIONS } from '../constants/locations';
 import { NPCS } from '../constants/npcs';
 import { getAvailableMoves } from '../constants/combatMoves';
+import { generateWorld } from '../systems/worldGenerator';
 
 interface GameState {
   // Screen & View Management
@@ -23,6 +25,14 @@ interface GameState {
   currentView: GameView;
   setScreen: (screen: GameScreen) => void;
   setView: (view: GameView) => void;
+
+  // Procedural World
+  world: WorldGraph | null;
+  currentNodeId: string;
+  generateNewWorld: (seed?: string) => void;
+  moveToNode: (nodeId: string) => void;
+  discoverNode: (nodeId: string) => void;
+  getCurrentNode: () => WorldNode | null;
 
   // Player
   player: Player;
@@ -131,6 +141,8 @@ export const useGameStore = create<GameState>()(
       // Initial state
       currentScreen: 'title',
       currentView: 'main',
+      world: null,
+      currentNodeId: 'esplanade',
       player: initialPlayer,
       gameLog: [],
       combatState: null,
@@ -147,6 +159,96 @@ export const useGameStore = create<GameState>()(
       // Screen & View
       setScreen: (screen) => set({ currentScreen: screen }),
       setView: (view) => set({ currentView: view }),
+
+      // Procedural World
+      generateNewWorld: (seed?: string) => {
+        const world = generateWorld({
+          seed,
+          depth: 10,
+          branchingFactor: 3,
+          npcSpawnChance: 0.4,
+          itemDensity: 0.6,
+          eventFrequency: 0.5,
+        });
+
+        get().addLog({
+          type: 'system',
+          message: `A new world unfolds before you. (Seed: ${world.seed.slice(0, 8)}...)`,
+          icon: '🗺️',
+        });
+
+        set({
+          world,
+          currentNodeId: world.startNodeId,
+        });
+      },
+
+      moveToNode: (nodeId: string) => {
+        const { world, currentNodeId } = get();
+        if (!world) return;
+
+        const currentNode = world.nodes.get(currentNodeId);
+        const targetNode = world.nodes.get(nodeId);
+
+        if (!currentNode || !targetNode) return;
+
+        // Check if nodes are connected
+        if (!currentNode.connections.includes(nodeId)) {
+          get().addLog({
+            type: 'warning',
+            message: 'You cannot reach that location from here.',
+            icon: '🚫',
+          });
+          return;
+        }
+
+        // Discover and reveal target node
+        targetNode.discovered = true;
+        targetNode.visited = true;
+
+        // Discover connected nodes (fog of war reveal)
+        targetNode.connections.forEach(connId => {
+          const connNode = world.nodes.get(connId);
+          if (connNode && !connNode.discovered) {
+            connNode.discovered = true;
+          }
+        });
+
+        // Award XP for first visit
+        if (!targetNode.visited) {
+          const xpReward = targetNode.type === 'anchor' ? 50 : 25;
+          get().addXP(xpReward);
+          get().addLog({
+            type: 'success',
+            message: `Discovered: ${targetNode.name}! (+${xpReward} XP)`,
+            icon: '✨',
+          });
+        }
+
+        get().addLog({
+          type: 'info',
+          message: `You arrive at ${targetNode.name}.`,
+          icon: '📍',
+        });
+
+        set({ currentNodeId: nodeId });
+      },
+
+      discoverNode: (nodeId: string) => {
+        const { world } = get();
+        if (!world) return;
+
+        const node = world.nodes.get(nodeId);
+        if (node) {
+          node.discovered = true;
+        }
+      },
+
+      getCurrentNode: () => {
+        const { world, currentNodeId } = get();
+        if (!world) return null;
+        return world.nodes.get(currentNodeId) || null;
+      },
 
       // Player actions
       updatePlayer: (updates) =>
@@ -504,7 +606,10 @@ export const useGameStore = create<GameState>()(
         }),
 
       // Game State
-      startGame: () =>
+      startGame: () => {
+        // Generate procedural world
+        get().generateNewWorld();
+
         set({
           gameStarted: true,
           currentScreen: 'game',
@@ -517,7 +622,8 @@ export const useGameStore = create<GameState>()(
               icon: '🎭',
             },
           ],
-        }),
+        });
+      },
 
       endGame: (reason) => set({ gameOver: true, gameOverReason: reason }),
 
