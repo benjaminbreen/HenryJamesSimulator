@@ -24,23 +24,8 @@ const MapView = () => {
     console.log('Clicked NPC:', npc.name, npc.profession);
   };
 
-  // Get all discovered nodes, sorted by type (anchors first) then by visited status
-  const discoveredNodes = Array.from(world.nodes.values())
-    .filter((node) => node.discovered)
-    .sort((a, b) => {
-      // Anchors before generated
-      if (a.type !== b.type) {
-        return a.type === 'anchor' ? -1 : 1;
-      }
-      // Visited before unvisited
-      if (a.visited !== b.visited) {
-        return a.visited ? -1 : 1;
-      }
-      return 0;
-    });
-
-  const anchorNodes = discoveredNodes.filter((n) => n.type === 'anchor');
-  const generatedNodes = discoveredNodes.filter((n) => n.type === 'generated');
+  // Get discovered nodes count for stats
+  const discoveredNodes = Array.from(world.nodes.values()).filter((node) => node.discovered);
 
   return (
     <div className="space-y-4">
@@ -78,68 +63,50 @@ const MapView = () => {
           onNPCClick={handleNPCClick}
         />
 
-        {/* Quick Travel List (below map) */}
-        <div className="pt-4 border-t border-belle-gold/30 space-y-3">
-          <h3 className="text-lg font-display text-belle-burgundy dark:text-belle-gold">
-            Quick Travel
-          </h3>
+        {/* Available Destinations */}
+        {currentNode.connections.length > 0 && (
+          <div className="pt-4 border-t-2 border-belle-gold/50 space-y-3">
+            <h3 className="text-xl font-display text-belle-burgundy dark:text-belle-gold flex items-center gap-2">
+              <span>🚶</span> Available Destinations ({currentNode.connections.length})
+            </h3>
 
-          <div className="grid grid-cols-3 md:grid-cols-4 gap-2 text-xs">
-            {/* Anchors first */}
-            {anchorNodes.map((node) => {
-              const isCurrent = node.id === currentNodeId;
-              const isConnected = currentNode.connections.includes(node.id);
-
-              return (
-                <button
-                  key={node.id}
-                  onClick={() => {
-                    if (isConnected || isCurrent) {
-                      handleNodeClick(node.id);
-                    }
-                  }}
-                  disabled={!isConnected && !isCurrent}
-                  className={`p-2 border rounded text-left transition-all ${
-                    isCurrent
-                      ? 'bg-belle-burgundy text-belle-cream border-belle-burgundy'
-                      : isConnected
-                      ? 'border-belle-gold/30 hover:bg-belle-gold/10 text-belle-navy dark:text-belle-cream'
-                      : 'border-gray-300 dark:border-gray-700 opacity-30'
-                  }`}
-                  title={node.name}
-                >
-                  <div className="font-semibold truncate">
-                    {isCurrent && '📍 '}⚓ {node.name}
-                  </div>
-                </button>
-              );
-            })}
-
-            {/* Connected generated nodes */}
-            {generatedNodes
-              .filter(n => currentNode.connections.includes(n.id) || n.id === currentNodeId)
-              .map((node) => {
-                const isCurrent = node.id === currentNodeId;
-
-                return (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {currentNode.connections
+                .map(connId => world.nodes.get(connId))
+                .filter((node): node is NonNullable<typeof node> => node !== undefined && node.discovered)
+                .sort((a, b) => {
+                  // Anchors first, then by name
+                  if (a.type !== b.type) return a.type === 'anchor' ? -1 : 1;
+                  return a.name.localeCompare(b.name);
+                })
+                .map((node) => (
                   <button
                     key={node.id}
                     onClick={() => handleNodeClick(node.id)}
-                    className={`p-2 border rounded text-left transition-all ${
-                      isCurrent
-                        ? 'bg-belle-burgundy text-belle-cream border-belle-burgundy'
-                        : 'border-belle-gold/30 hover:bg-belle-gold/10 text-belle-navy dark:text-belle-cream'
-                    }`}
-                    title={node.name}
+                    className="p-3 border-2 border-belle-gold/30 hover:border-belle-burgundy rounded-lg hover:bg-belle-gold/20 transition-all text-left group"
                   >
-                    <div className="font-semibold truncate">
-                      {isCurrent && '📍 '}✨ {node.name}
+                    <div className="flex items-center gap-2">
+                      <div className="text-2xl">
+                        {node.type === 'anchor' ? '⚓' : '✨'}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-display text-sm font-semibold text-belle-burgundy dark:text-belle-gold group-hover:text-belle-burgundy truncate">
+                          {node.name}
+                        </div>
+                        <div className="text-xs text-belle-navy/70 dark:text-belle-cream/70 capitalize">
+                          {node.biome.replace(/-/g, ' ')}
+                          {!node.visited && <span className="ml-2 text-belle-gold">✨ New!</span>}
+                        </div>
+                      </div>
+                      <div className="text-xl opacity-0 group-hover:opacity-100 transition-opacity">
+                        →
+                      </div>
                     </div>
                   </button>
-                );
-              })}
+                ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
