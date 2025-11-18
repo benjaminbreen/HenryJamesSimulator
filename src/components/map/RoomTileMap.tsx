@@ -1,5 +1,14 @@
 import type { WorldNode, TileType } from '../../types/procedural';
 import { MapTile, TILE_SIZE } from './MapTiles';
+import {
+  CandelightFlicker,
+  ElectricLight,
+  FloatingParticles,
+  GaslightFlicker,
+  Sunbeam,
+  MarketplaceBustle,
+  SteamPuff,
+} from './AnimatedEffects';
 
 interface RoomTileMapProps {
   node: WorldNode;
@@ -222,6 +231,9 @@ function renderRoom(node: WorldNode, layout: RoomLayout, scale: number) {
 
       {/* Ambient lighting effect based on biome */}
       {renderAmbientEffect(node.biome, width, height)}
+
+      {/* Animated atmospheric effects */}
+      {renderAnimatedEffects(node.biome, width, height)}
     </svg>
   );
 }
@@ -314,6 +326,103 @@ function renderAmbientEffect(biome: string, width: number, height: number) {
           opacity="0.15"
           pointerEvents="none"
         />
+      );
+
+    default:
+      return null;
+  }
+}
+
+// Add animated atmospheric effects per biome
+function renderAnimatedEffects(biome: string, width: number, height: number) {
+  const w = width * TILE_SIZE;
+  const h = height * TILE_SIZE;
+  const centerX = w / 2;
+
+  switch (biome) {
+    case 'exhibition-hall':
+      return (
+        <>
+          {/* Electric arc lamps */}
+          <ElectricLight x={centerX} y={TILE_SIZE * 2} />
+          {width > 10 && <ElectricLight x={w - TILE_SIZE * 3} y={TILE_SIZE * 2} />}
+
+          {/* Rising steam from machinery */}
+          <SteamPuff x={TILE_SIZE * 3} y={h - TILE_SIZE * 3} delay={0} />
+          {width > 12 && <SteamPuff x={w - TILE_SIZE * 3} y={h - TILE_SIZE * 3} delay={1.5} />}
+
+          {/* Industrial dust particles */}
+          <FloatingParticles width={w} height={h} count={6} color="#C8C8C8" type="dust" />
+        </>
+      );
+
+    case 'indoor-salon':
+      return (
+        <>
+          {/* Flickering candlelight from chandelier */}
+          <CandelightFlicker x={centerX} y={TILE_SIZE * 2} intensity={0.8} />
+          {width > 10 && <CandelightFlicker x={TILE_SIZE * 3} y={TILE_SIZE * 2} intensity={0.6} />}
+          {width > 10 && <CandelightFlicker x={w - TILE_SIZE * 3} y={TILE_SIZE * 2} intensity={0.6} />}
+
+          {/* Floating dust motes in candlelight */}
+          <FloatingParticles width={w} height={h} count={10} color="#F4CF57" type="sparkle" />
+        </>
+      );
+
+    case 'outdoor-promenade':
+    case 'street':
+      return (
+        <>
+          {/* Gaslight street lamps */}
+          <GaslightFlicker x={TILE_SIZE * 3} y={TILE_SIZE * 2} />
+          {width > 10 && <GaslightFlicker x={w - TILE_SIZE * 3} y={TILE_SIZE * 2} />}
+
+          {/* Atmospheric haze */}
+          <FloatingParticles width={w} height={h} count={5} color="#E8DCC8" type="smoke" />
+        </>
+      );
+
+    case 'garden':
+      return (
+        <>
+          {/* Sunbeams through trees */}
+          <Sunbeam x={TILE_SIZE * 2} y={TILE_SIZE * 3} width={w - TILE_SIZE * 4} angle={-25} />
+          <Sunbeam x={TILE_SIZE * 4} y={TILE_SIZE * 5} width={w - TILE_SIZE * 8} angle={-35} />
+
+          {/* Floating pollen/seeds */}
+          <FloatingParticles width={w} height={h} count={8} color="#F4CF57" type="dust" />
+        </>
+      );
+
+    case 'marketplace':
+      return (
+        <>
+          {/* Market bustle and activity */}
+          <MarketplaceBustle x={centerX} y={h - TILE_SIZE * 2} />
+          {width > 10 && <MarketplaceBustle x={TILE_SIZE * 4} y={h - TILE_SIZE * 3} />}
+
+          {/* Dust from foot traffic */}
+          <FloatingParticles width={w} height={h} count={6} color="#8B7355" type="dust" />
+        </>
+      );
+
+    case 'backstage':
+      return (
+        <>
+          {/* Dim theatrical lighting with dust */}
+          <FloatingParticles width={w} height={h} count={8} color="#A0A0A8" type="smoke" />
+        </>
+      );
+
+    case 'npc-quarters':
+      return (
+        <>
+          {/* Simple candlelight */}
+          <CandelightFlicker x={TILE_SIZE * 2} y={TILE_SIZE * 2} intensity={0.5} />
+
+          {/* Sparse dust motes */}
+          <FloatingParticles width={w} height={h} count={4} color="#E8DCC8" type="dust" />
+        </>
       );
 
     default:
