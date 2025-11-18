@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
-import { LOCATIONS } from '../../constants/locations';
 import { NPCS } from '../../constants/npcs';
 import { getAvailableEvents } from '../../constants/events';
 import { generateItem } from '../../utils/itemGenerator';
@@ -8,7 +7,9 @@ import { generateItem } from '../../utils/itemGenerator';
 const LocationView = () => {
   const {
     player,
-    changeLocation,
+    world,
+    moveToNode,
+    getCurrentNode,
     startCombat,
     addItem,
     addLog,
@@ -19,9 +20,19 @@ const LocationView = () => {
 
   const [selectedNPC, setSelectedNPC] = useState<string | null>(null);
 
-  const currentLocation = LOCATIONS[player.location];
-  const npcsHere = currentLocation.npcs.map((id) => NPCS[id]);
-  const availableEvents = getAvailableEvents(player.location, player.level, completedEvents);
+  const currentNode = getCurrentNode();
+
+  // Handle loading state
+  if (!currentNode || !world) {
+    return (
+      <div className="ornate-border bg-white dark:bg-belle-navy/30 p-6">
+        <p className="text-belle-navy dark:text-belle-cream">Generating world...</p>
+      </div>
+    );
+  }
+
+  const npcsHere = currentNode.npcs.map((id) => NPCS[id]).filter(Boolean);
+  const availableEvents = getAvailableEvents(currentNode.id, player.level, completedEvents);
 
   const handleExplore = () => {
     // Random encounter
@@ -37,9 +48,15 @@ const LocationView = () => {
         addLog({ type: 'success', message: `Found ${gold} francs!`, icon: '💰' });
       },
       () => {
+        // Use node description or generate ambient text
+        const ambientMessages = [
+          currentNode.description,
+          `The ${currentNode.biome} atmosphere surrounds you.`,
+          `You notice the details of this ${currentNode.type === 'anchor' ? 'landmark' : 'space'}.`,
+        ];
         addLog({
           type: 'info',
-          message: currentLocation.ambientText[Math.floor(Math.random() * currentLocation.ambientText.length)],
+          message: ambientMessages[Math.floor(Math.random() * ambientMessages.length)],
           icon: '👁️',
         });
       },
@@ -62,17 +79,34 @@ const LocationView = () => {
     <div className="space-y-4">
       {/* Location Display */}
       <div className="ornate-border bg-white dark:bg-belle-navy/30 p-6 space-y-4">
-        <h2 className="text-3xl font-display text-belle-burgundy dark:text-belle-gold">
-          {currentLocation.name}
-        </h2>
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="text-3xl font-display text-belle-burgundy dark:text-belle-gold">
+            {currentNode.name}
+          </h2>
+          <div className="text-xs text-belle-navy/70 dark:text-belle-cream/70 text-right">
+            <div className="capitalize">{currentNode.biome.replace(/-/g, ' ')}</div>
+            <div className="text-belle-burgundy dark:text-belle-gold">
+              {currentNode.type === 'anchor' ? '⚓ Landmark' : '✨ Procedural'}
+            </div>
+          </div>
+        </div>
 
         <pre className="ascii-art text-xs sm:text-sm text-belle-navy dark:text-belle-gold overflow-x-auto">
-          {currentLocation.asciiArt}
+          {currentNode.asciiArt}
         </pre>
 
         <p className="text-belle-navy dark:text-belle-cream leading-relaxed">
-          {currentLocation.description}
+          {currentNode.description}
         </p>
+
+        {/* Show procedural features */}
+        {currentNode.features.length > 0 && (
+          <div className="pt-2 border-t border-belle-gold/30">
+            <p className="text-sm text-belle-navy/80 dark:text-belle-cream/80 italic">
+              Notable features: {currentNode.features.map((f) => f.name).join(', ')}
+            </p>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2">
@@ -170,19 +204,44 @@ const LocationView = () => {
           Paths Forward
         </h3>
         <div className="grid grid-cols-2 gap-2">
-          {currentLocation.connections.map((connId) => {
-            const conn = LOCATIONS[connId];
+          {currentNode.connections.map((connId) => {
+            const connectedNode = world.nodes.get(connId);
+            if (!connectedNode) return null;
+
+            // Fog of war: only show discovered nodes
+            if (!connectedNode.discovered) {
+              return (
+                <div
+                  key={connId}
+                  className="p-3 border-2 border-belle-gold/30 rounded-lg opacity-50 text-left"
+                >
+                  <div className="font-display text-belle-burgundy dark:text-belle-gold">
+                    ???
+                  </div>
+                  <div className="text-xs text-belle-navy/70 dark:text-belle-cream/70">
+                    Unexplored
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <button
                 key={connId}
-                onClick={() => changeLocation(connId)}
+                onClick={() => moveToNode(connId)}
                 className="p-3 border-2 border-belle-gold/30 rounded-lg hover:bg-belle-gold/10 transition-all text-left"
               >
                 <div className="font-display text-belle-burgundy dark:text-belle-gold">
-                  {conn.name}
+                  {connectedNode.name}
                 </div>
-                <div className="text-xs text-belle-navy/70 dark:text-belle-cream/70">
-                  {!player.visitedLocations.has(connId) && '✨ Undiscovered'}
+                <div className="text-xs text-belle-navy/70 dark:text-belle-cream/70 space-y-1">
+                  <div className="capitalize">{connectedNode.biome.replace(/-/g, ' ')}</div>
+                  {!connectedNode.visited && (
+                    <div className="text-belle-gold">✨ Not yet visited</div>
+                  )}
+                  {connectedNode.type === 'anchor' && (
+                    <div className="text-belle-burgundy dark:text-belle-gold">⚓ Landmark</div>
+                  )}
                 </div>
               </button>
             );
