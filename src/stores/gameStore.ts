@@ -14,10 +14,15 @@ import type {
   NPCId,
 } from '../types/game';
 import type { WorldGraph, WorldNode } from '../types/procedural';
+import type { AgenticNPC } from '../types/npc';
 import { LOCATIONS } from '../constants/locations';
 import { NPCS } from '../constants/npcs';
 import { getAvailableMoves } from '../constants/combatMoves';
 import { generateWorld } from '../systems/worldGenerator';
+import { NPCAgentSystem } from '../systems/npcAgentSystem';
+
+// Global NPC agent system (not persisted)
+let npcAgentSystem: NPCAgentSystem | null = null;
 
 interface GameState {
   // Screen & View Management
@@ -33,6 +38,12 @@ interface GameState {
   moveToNode: (nodeId: string) => void;
   discoverNode: (nodeId: string) => void;
   getCurrentNode: () => WorldNode | null;
+
+  // Agentic NPCs
+  agenticNPCs: Map<string, AgenticNPC>;
+  getNPC: (npcId: string) => AgenticNPC | undefined;
+  getNPCsInNode: (nodeId: string) => AgenticNPC[];
+  updateNPC: (npcId: string, updates: Partial<AgenticNPC>) => void;
 
   // Player
   player: Player;
@@ -143,6 +154,7 @@ export const useGameStore = create<GameState>()(
       currentView: 'main',
       world: null,
       currentNodeId: 'esplanade',
+      agenticNPCs: new Map(),
       player: initialPlayer,
       gameLog: [],
       combatState: null,
@@ -162,24 +174,39 @@ export const useGameStore = create<GameState>()(
 
       // Procedural World
       generateNewWorld: (seed?: string) => {
-        const world = generateWorld({
+        const { world, npcs } = generateWorld({
           seed,
           depth: 10,
           branchingFactor: 3,
-          npcSpawnChance: 0.4,
+          npcSpawnChance: 0.7,
           itemDensity: 0.6,
           eventFrequency: 0.5,
         });
 
         get().addLog({
           type: 'system',
-          message: `A new world unfolds before you. (Seed: ${world.seed.slice(0, 8)}...)`,
+          message: `A new world unfolds before you. (Seed: ${world.seed.slice(0, 8)}..., ${npcs.size} NPCs)`,
           icon: '🗺️',
         });
+
+        // Initialize and start NPC agent system
+        if (npcAgentSystem) {
+          npcAgentSystem.stop();
+        }
+        npcAgentSystem = new NPCAgentSystem(world);
+
+        // Register all NPCs with the agent system
+        npcs.forEach((npc) => {
+          npcAgentSystem!.registerNPC(npc);
+        });
+
+        // Start the agent system
+        npcAgentSystem.start();
 
         set({
           world,
           currentNodeId: world.startNodeId,
+          agenticNPCs: npcs,
         });
       },
 
@@ -248,6 +275,31 @@ export const useGameStore = create<GameState>()(
         const { world, currentNodeId } = get();
         if (!world) return null;
         return world.nodes.get(currentNodeId) || null;
+      },
+
+      // Agentic NPC methods
+      getNPC: (npcId: string) => {
+        return get().agenticNPCs.get(npcId);
+      },
+
+      getNPCsInNode: (nodeId: string) => {
+        const npcs = Array.from(get().agenticNPCs.values());
+        return npcs.filter((npc) => npc.position.nodeId === nodeId);
+      },
+
+      updateNPC: (npcId: string, updates: Partial<AgenticNPC>) => {
+        const npcs = get().agenticNPCs;
+        const npc = npcs.get(npcId);
+        if (npc) {
+          const updatedNPC = { ...npc, ...updates };
+          npcs.set(npcId, updatedNPC);
+          set({ agenticNPCs: new Map(npcs) });
+
+          // Update in agent system too
+          if (npcAgentSystem) {
+            npcAgentSystem.registerNPC(updatedNPC);
+          }
+        }
       },
 
       // Player actions
@@ -625,7 +677,13 @@ export const useGameStore = create<GameState>()(
         });
       },
 
-      endGame: (reason) => set({ gameOver: true, gameOverReason: reason }),
+      endGame: (reason) => {
+        // Stop NPC agent system
+        if (npcAgentSystem) {
+          npcAgentSystem.stop();
+        }
+        set({ gameOver: true, gameOverReason: reason });
+      },
 
       // Settings
       updateSettings: (updates) =>

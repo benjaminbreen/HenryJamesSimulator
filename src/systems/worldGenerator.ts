@@ -1,8 +1,10 @@
 import type { WorldGraph, WorldNode, GenerationConfig, BiomeType } from '../types/procedural';
+import type { AgenticNPC } from '../types/npc';
 import { SeededRandom, createGameSeed } from '../utils/seededRandom';
 import { LOCATIONS } from '../constants/locations';
 import { BIOME_TEMPLATES, getCompatibleBiomes } from '../constants/biomeTemplates';
 import { generateRoom } from './roomGenerator';
+import { NPCGenerator } from './npcGenerator';
 
 // Define which existing locations are anchors (hand-crafted, always present)
 const ANCHOR_LOCATIONS = [
@@ -33,10 +35,14 @@ const LOCATION_TO_BIOME: Record<string, BiomeType> = {
 export class WorldGenerator {
   private rng: SeededRandom;
   private seed: string;
+  private npcGenerator: NPCGenerator;
+  private generatedNPCs: Map<string, AgenticNPC>;
 
   constructor(seed?: string) {
     this.seed = seed || createGameSeed();
     this.rng = new SeededRandom(this.seed);
+    this.npcGenerator = new NPCGenerator(this.seed + '-npcs');
+    this.generatedNPCs = new Map();
   }
 
   generateWorld(config: GenerationConfig): WorldGraph {
@@ -68,7 +74,12 @@ export class WorldGenerator {
       anchorNodes: anchorNodes.map(n => n.id),
       seed: this.seed,
       generatedAt: Date.now(),
+      agenticNPCs: Array.from(this.generatedNPCs.keys()),
     };
+  }
+
+  getGeneratedNPCs(): Map<string, AgenticNPC> {
+    return this.generatedNPCs;
   }
 
   private createAnchorNodes(): WorldNode[] {
@@ -354,8 +365,22 @@ export class WorldGenerator {
 
   private populateNodes(nodes: Map<string, WorldNode>, config: GenerationConfig): void {
     nodes.forEach(node => {
-      // Anchor nodes already have NPCs from hand-crafted data
+      // Anchor nodes keep their hand-crafted historical figure NPCs (Oscar Wilde, Edison, etc.)
+      // But we can add a few procedural NPCs as "extras" in anchor nodes too
       if (node.type === 'anchor') {
+        // Add 0-2 procedural NPCs to anchor nodes
+        if (this.rng.nextBool(0.6)) {
+          const npcCount = this.rng.nextInt(0, 2);
+          for (let i = 0; i < npcCount; i++) {
+            const npc = this.npcGenerator.generateNPC({
+              biome: node.biome,
+              nodeId: node.id,
+            });
+            this.generatedNPCs.set(npc.id, npc);
+            node.npcs.push(npc.id);
+          }
+        }
+
         // Maybe add some items
         if (this.rng.nextBool(config.itemDensity)) {
           node.items.push('random-item-' + this.rng.nextInt(1, 100));
@@ -363,15 +388,18 @@ export class WorldGenerator {
         return;
       }
 
-      // Generated nodes: spawn NPCs based on biome
-      const biomeTemplate = BIOME_TEMPLATES[node.biome];
-      if (biomeTemplate.possibleNPCs.length > 0 && this.rng.nextBool(config.npcSpawnChance)) {
-        const npcCount = this.rng.nextInt(0, node.template!.npcSlots);
-        const spawned = this.rng.sample(
-          biomeTemplate.possibleNPCs,
-          Math.min(npcCount, biomeTemplate.possibleNPCs.length)
-        );
-        node.npcs = spawned;
+      // Generated nodes: spawn procedural NPCs based on biome and template
+      if (node.template && this.rng.nextBool(config.npcSpawnChance)) {
+        const npcCount = this.rng.nextInt(1, node.template.npcSlots + 1);
+
+        for (let i = 0; i < npcCount; i++) {
+          const npc = this.npcGenerator.generateNPC({
+            biome: node.biome,
+            nodeId: node.id,
+          });
+          this.generatedNPCs.set(npc.id, npc);
+          node.npcs.push(npc.id);
+        }
       }
 
       // Spawn items
@@ -391,17 +419,20 @@ export class WorldGenerator {
 }
 
 // Helper function to regenerate world
-export function generateWorld(config?: Partial<GenerationConfig>): WorldGraph {
+export function generateWorld(config?: Partial<GenerationConfig>): { world: WorldGraph; npcs: Map<string, AgenticNPC> } {
   const defaultConfig: GenerationConfig = {
     seed: undefined, // Will auto-generate
     depth: 10,
     branchingFactor: 3,
-    npcSpawnChance: 0.4,
+    npcSpawnChance: 0.7,
     itemDensity: 0.6,
     eventFrequency: 0.5,
   };
 
   const finalConfig = { ...defaultConfig, ...config };
   const generator = new WorldGenerator(finalConfig.seed);
-  return generator.generateWorld(finalConfig);
+  const world = generator.generateWorld(finalConfig);
+  const npcs = generator.getGeneratedNPCs();
+
+  return { world, npcs };
 }

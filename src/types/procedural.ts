@@ -73,6 +73,7 @@ export interface WorldGraph {
   anchorNodes: string[]; // IDs of hand-crafted nodes
   seed: string;
   generatedAt: number;
+  agenticNPCs: string[]; // IDs of procedurally generated AgenticNPCs (separate from historical figures)
 }
 
 export interface GenerationConfig {
