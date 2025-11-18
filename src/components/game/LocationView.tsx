@@ -3,6 +3,7 @@ import { useGameStore } from '../../stores/gameStore';
 import { NPCS } from '../../constants/npcs';
 import { getAvailableEvents } from '../../constants/events';
 import { generateItem } from '../../utils/itemGenerator';
+import RoomTileMap from '../map/RoomTileMap';
 
 const LocationView = () => {
   const {
@@ -91,9 +92,20 @@ const LocationView = () => {
           </div>
         </div>
 
-        <pre className="ascii-art text-xs sm:text-sm text-belle-navy dark:text-belle-gold overflow-x-auto">
-          {currentNode.asciiArt}
-        </pre>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <pre className="ascii-art text-xs sm:text-sm text-belle-navy dark:text-belle-gold overflow-x-auto">
+              {currentNode.asciiArt}
+            </pre>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="text-xs text-belle-navy/70 dark:text-belle-cream/70 font-semibold">
+              Room Layout
+            </div>
+            <RoomTileMap node={currentNode} scale={1.5} />
+          </div>
+        </div>
 
         <p className="text-belle-navy dark:text-belle-cream leading-relaxed">
           {currentNode.description}
