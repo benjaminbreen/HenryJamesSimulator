@@ -68,6 +68,9 @@ export class WorldGenerator {
     // Step 5: Populate nodes with NPCs, items, events
     this.populateNodes(nodes, config);
 
+    // Step 6: Auto-discover adjacent nodes from starting position
+    this.discoverAdjacentNodes(nodes, 'esplanade');
+
     return {
       nodes,
       startNodeId: 'esplanade',
@@ -76,6 +79,19 @@ export class WorldGenerator {
       generatedAt: Date.now(),
       agenticNPCs: Array.from(this.generatedNPCs.keys()),
     };
+  }
+
+  private discoverAdjacentNodes(nodes: Map<string, WorldNode>, startNodeId: string): void {
+    const startNode = nodes.get(startNodeId);
+    if (!startNode) return;
+
+    // Discover all nodes directly connected to starting position
+    startNode.connections.forEach(connId => {
+      const connectedNode = nodes.get(connId);
+      if (connectedNode && !connectedNode.discovered) {
+        connectedNode.discovered = true;
+      }
+    });
   }
 
   getGeneratedNPCs(): Map<string, AgenticNPC> {
@@ -89,6 +105,8 @@ export class WorldGenerator {
         throw new Error(`Anchor location ${locationId} not found`);
       }
 
+      const isStartLocation = locationId === 'esplanade';
+
       return {
         id: locationId,
         type: 'anchor',
@@ -97,8 +115,8 @@ export class WorldGenerator {
         description: location.description,
         asciiArt: location.asciiArt,
         connections: [], // Will be filled in connectNodes
-        discovered: locationId === 'esplanade', // Start location is discovered
-        visited: false,
+        discovered: isStartLocation, // Start location is discovered
+        visited: isStartLocation, // Start location is also visited immediately
         position: { x: 0, y: 0 }, // Will be positioned later
         depth: 0,
         features: [],

@@ -38,29 +38,93 @@ const LocationView = () => {
   const agenticNPCs = getNPCsInNode(currentNode.id);
 
   const handleExplore = () => {
-    // Random encounter
-    const outcomes = [
-      () => {
-        const item = generateItem();
-        addItem(item);
-        addLog({ type: 'success', message: `Found: ${item.name}!`, icon: '✨' });
-      },
-      () => {
-        const gold = Math.floor(Math.random() * 50) + 10;
-        useGameStore.getState().updatePlayer({ gold: player.gold + gold });
-        addLog({ type: 'success', message: `Found ${gold} francs!`, icon: '💰' });
-      },
-      () => {
+    // Check quest progress for exploring
+    useGameStore.getState().checkQuestProgress(undefined, undefined, 'explore');
+
+    // Stat-based exploration outcomes
+    const perceptionBonus = Math.floor(player.stats.perception / 20); // 0-5 bonus
+    const eruditionBonus = Math.floor(player.stats.erudition / 20);
+
+    // Higher perception = better finds
+    const roll = Math.random() * 100 + perceptionBonus;
+
+    if (roll > 85) {
+      // Excellent find - rare item
+      const item = generateItem();
+      addItem(item);
+      addLog({
+        type: 'success',
+        message: `Your keen perception revealed: ${item.name}!`,
+        icon: '✨',
+      });
+      useGameStore.getState().addXP(25);
+    } else if (roll > 65) {
+      // Good find - gold
+      const gold = Math.floor(Math.random() * 75) + 25 + perceptionBonus * 10;
+      useGameStore.getState().updatePlayer({ gold: player.gold + gold });
+      addLog({
+        type: 'success',
+        message: `You discovered ${gold} francs hidden in ${currentNode.name}!`,
+        icon: '💰',
+      });
+      useGameStore.getState().addXP(15);
+    } else if (roll > 45) {
+      // Moderate success - historical insight
+      const xpGain = 30 + eruditionBonus * 5;
+      useGameStore.getState().addXP(xpGain);
+      addLog({
+        type: 'success',
+        message: `Your erudition allows you to appreciate the historical significance of this place. +${xpGain} XP`,
+        icon: '📚',
+      });
+
+      // Add to journal
+      useGameStore.getState().addJournalEntry({
+        type: 'observation',
+        title: `Observations at ${currentNode.name}`,
+        content: currentNode.description,
+        location: player.location,
+      });
+    } else if (roll > 25) {
+      // Minor find - small gold
+      const gold = Math.floor(Math.random() * 30) + 10;
+      useGameStore.getState().updatePlayer({ gold: player.gold + gold });
+      addLog({
+        type: 'info',
+        message: `You found ${gold} francs.`,
+        icon: '💰',
+      });
+      useGameStore.getState().addXP(10);
+    } else {
+      // Nothing special, but learned something
+      addLog({
+        type: 'info',
+        message: currentNode.description,
+        icon: '👁️',
+      });
+      addLog({
+        type: 'info',
+        message: 'You explore thoroughly but find nothing of immediate value.',
+        icon: '🔍',
+      });
+      useGameStore.getState().addXP(5);
+    }
+
+    // Room features can provide additional bonuses
+    if (currentNode.features.length > 0) {
+      const interactableFeatures = currentNode.features.filter(
+        f => f.type === 'interactive' || f.type === 'decoration'
+      );
+
+      if (interactableFeatures.length > 0 && Math.random() > 0.7) {
+        const feature = interactableFeatures[Math.floor(Math.random() * interactableFeatures.length)];
         addLog({
           type: 'info',
-          message: currentNode.description,
-          icon: '👁️',
+          message: `You notice: ${feature.name} - ${feature.description}`,
+          icon: '🔍',
         });
-      },
-    ];
-
-    const randomOutcome = outcomes[Math.floor(Math.random() * outcomes.length)];
-    randomOutcome();
+      }
+    }
   };
 
   return (

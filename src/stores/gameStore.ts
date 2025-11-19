@@ -15,6 +15,8 @@ import type {
 } from '../types/game';
 import type { WorldGraph, WorldNode } from '../types/procedural';
 import type { AgenticNPC } from '../types/npc';
+import type { Quest, QuestObjective } from '../types/quest';
+import { MAIN_QUEST, STARTER_QUESTS } from '../types/quest';
 import { LOCATIONS } from '../constants/locations';
 import { NPCS } from '../constants/npcs';
 import { getAvailableMoves } from '../constants/combatMoves';
@@ -115,6 +117,16 @@ interface GameState {
   sendDialogueMessage: (message: string) => Promise<void>;
   endDialogue: () => void;
   isDialogueLoading: boolean;
+
+  // Quest System
+  quests: Quest[];
+  activeQuests: Quest[];
+  completedQuests: Quest[];
+  addQuest: (quest: Quest) => void;
+  updateQuestObjective: (questId: string, objectiveId: string, completed: boolean) => void;
+  completeQuest: (questId: string) => void;
+  checkQuestProgress: (nodeId?: string, npcId?: string, action?: string) => void;
+  getActiveObjectives: () => QuestObjective[];
 }
 
 const initialPlayer: Player = {
@@ -184,6 +196,9 @@ export const useGameStore = create<GameState>()(
       readingBook: null,
       activeDialogue: null,
       isDialogueLoading: false,
+      quests: [],
+      activeQuests: [],
+      completedQuests: [],
 
       // Screen & View
       setScreen: (screen) => set({ currentScreen: screen }),
@@ -246,6 +261,9 @@ export const useGameStore = create<GameState>()(
           return;
         }
 
+        // Check if this is first visit BEFORE marking as visited
+        const isFirstVisit = !targetNode.visited;
+
         // Discover and reveal target node
         targetNode.discovered = true;
         targetNode.visited = true;
@@ -259,7 +277,7 @@ export const useGameStore = create<GameState>()(
         });
 
         // Award XP for first visit
-        if (!targetNode.visited) {
+        if (isFirstVisit) {
           const xpReward = targetNode.type === 'anchor' ? 50 : 25;
           get().addXP(xpReward);
           get().addLog({
@@ -276,6 +294,9 @@ export const useGameStore = create<GameState>()(
         });
 
         set({ currentNodeId: nodeId });
+
+        // Check quest progress for visiting this node
+        get().checkQuestProgress(nodeId);
       },
 
       discoverNode: (nodeId: string) => {
@@ -561,19 +582,40 @@ export const useGameStore = create<GameState>()(
         set((state) => {
           if (!state.combatState) return state;
 
+          const opponent = state.combatState.opponent;
+
           if (victory) {
-            const xpReward = state.player.level * 50;
-            const goldReward = 50;
+            // Scale rewards by player level and opponent difficulty
+            const xpReward = state.player.level * 50 + 100;
+            const goldReward = Math.floor(Math.random() * 100) + 50;
+            const reputationBonus = 5;
 
             get().addXP(xpReward);
             get().addLog({
               type: 'success',
-              message: `Victory! Earned ${xpReward} XP and ${goldReward} francs.`,
+              message: `Victory! You bested ${opponent.name} in a battle of wits!`,
               icon: '🏆',
             });
 
+            get().addLog({
+              type: 'success',
+              message: `Rewards: +${xpReward} XP, +${goldReward} francs, +${reputationBonus} reputation`,
+              icon: '💰',
+            });
+
             const defeatedNPCs = new Set(state.player.defeatedNPCs);
-            defeatedNPCs.add(state.combatState.opponent.id);
+            defeatedNPCs.add(opponent.id);
+
+            // Add journal entry for memorable victory
+            get().addJournalEntry({
+              type: 'combat',
+              title: `Victory over ${opponent.name}`,
+              content: `I engaged in a spirited verbal duel with ${opponent.name}, ${opponent.title}. Through superior wit and literary references, I emerged victorious. ${opponent.historicalContext || ''}`,
+              location: state.player.location,
+            });
+
+            // Check for quest progress (combat objectives)
+            get().checkQuestProgress(undefined, opponent.id, 'combat');
 
             return {
               combatState: null,
@@ -581,14 +623,26 @@ export const useGameStore = create<GameState>()(
               player: {
                 ...state.player,
                 gold: state.player.gold + goldReward,
+                reputation: state.player.reputation + reputationBonus,
                 defeatedNPCs,
               },
             };
           } else {
             get().addLog({
               type: 'warning',
-              message: 'Defeated in battle! Your reputation takes a hit.',
+              message: `Defeated by ${opponent.name}! Your reputation takes a hit, but you learned something valuable.`,
               icon: '💔',
+            });
+
+            // Small consolation XP for the attempt
+            const consolationXP = 10;
+            get().addXP(consolationXP);
+
+            get().addJournalEntry({
+              type: 'combat',
+              title: `Defeat at the hands of ${opponent.name}`,
+              content: `My encounter with ${opponent.name} did not go as planned. I was outmatched in this battle of wits. I must improve my skills before challenging them again.`,
+              location: state.player.location,
             });
 
             return {
@@ -679,9 +733,16 @@ export const useGameStore = create<GameState>()(
         // Generate procedural world
         get().generateNewWorld();
 
+        // Initialize quests
+        const initialQuests = [MAIN_QUEST, ...STARTER_QUESTS];
+        const activeQuests = initialQuests.filter(q => q.status === 'active');
+
         set({
           gameStarted: true,
           currentScreen: 'game',
+          quests: initialQuests,
+          activeQuests,
+          completedQuests: [],
           gameLog: [
             {
               id: 'welcome',
@@ -691,6 +752,13 @@ export const useGameStore = create<GameState>()(
               icon: '🎭',
             },
           ],
+        });
+
+        // Add quest notifications
+        get().addLog({
+          type: 'success',
+          message: 'Quest Started: Ascend the Eiffel Tower',
+          icon: '📜',
         });
       },
 
@@ -778,6 +846,9 @@ Generated: ${new Date().toLocaleString()}
           message: `You begin a conversation with ${npc.name}.`,
           icon: '💬',
         });
+
+        // Check quest progress for talking to this NPC
+        get().checkQuestProgress(undefined, npcId);
       },
 
       sendDialogueMessage: async (message: string) => {
@@ -907,6 +978,229 @@ Generated: ${new Date().toLocaleString()}
 
         set({ activeDialogue: null, isDialogueLoading: false });
       },
+
+      // Quest System
+      addQuest: (quest: Quest) => {
+        set((state) => {
+          const quests = [...state.quests, { ...quest, status: 'active' as const }];
+          const activeQuests = quests.filter(q => q.status === 'active');
+          return { quests, activeQuests };
+        });
+
+        get().addLog({
+          type: 'success',
+          message: `New Quest: ${quest.title}`,
+          icon: '📜',
+        });
+
+        get().addJournalEntry({
+          type: 'event',
+          title: quest.title,
+          content: quest.description,
+          location: get().player.location,
+        });
+      },
+
+      updateQuestObjective: (questId: string, objectiveId: string, completed: boolean) => {
+        set((state) => {
+          const quests = state.quests.map(quest => {
+            if (quest.id === questId) {
+              const objectives = quest.objectives.map(obj =>
+                obj.id === objectiveId ? { ...obj, completed } : obj
+              );
+
+              // Check if all required objectives are complete
+              const allComplete = objectives
+                .filter(obj => !obj.optional)
+                .every(obj => obj.completed);
+
+              return {
+                ...quest,
+                objectives,
+                status: allComplete ? 'completed' as const : quest.status,
+              };
+            }
+            return quest;
+          });
+
+          const activeQuests = quests.filter(q => q.status === 'active');
+          const completedQuests = quests.filter(q => q.status === 'completed');
+
+          return { quests, activeQuests, completedQuests };
+        });
+      },
+
+      completeQuest: (questId: string) => {
+        const quest = get().quests.find(q => q.id === questId);
+        if (!quest || quest.status === 'completed') return;
+
+        // Award rewards
+        if (quest.rewards.xp) get().addXP(quest.rewards.xp);
+        if (quest.rewards.gold) {
+          get().updatePlayer({ gold: get().player.gold + quest.rewards.gold });
+        }
+        if (quest.rewards.reputation) {
+          get().updatePlayer({
+            reputation: get().player.reputation + quest.rewards.reputation,
+          });
+        }
+        if (quest.rewards.items) {
+          quest.rewards.items.forEach(itemId => {
+            // Award items (simplified for now)
+            get().addLog({
+              type: 'success',
+              message: `Received: ${itemId}`,
+              icon: '🎁',
+            });
+          });
+        }
+
+        get().addLog({
+          type: 'success',
+          message: `Quest Completed: ${quest.title}!`,
+          icon: '🏆',
+        });
+
+        if (quest.rewards.xp || quest.rewards.gold) {
+          get().addLog({
+            type: 'success',
+            message: `Rewards: ${quest.rewards.xp ? `+${quest.rewards.xp} XP` : ''} ${quest.rewards.gold ? `+${quest.rewards.gold} francs` : ''}`,
+            icon: '💰',
+          });
+        }
+
+        get().addJournalEntry({
+          type: 'event',
+          title: `${quest.title} - Completed`,
+          content: `You have completed this quest and earned your rewards.`,
+          location: get().player.location,
+        });
+
+        set((state) => {
+          const quests = state.quests.map(q =>
+            q.id === questId ? { ...q, status: 'completed' as const, completedAt: Date.now() } : q
+          );
+          const activeQuests = quests.filter(q => q.status === 'active');
+          const completedQuests = quests.filter(q => q.status === 'completed');
+          return { quests, activeQuests, completedQuests };
+        });
+      },
+
+      checkQuestProgress: (nodeId?: string, npcId?: string, action?: string) => {
+        const { quests, currentNodeId } = get();
+        const currentNode = nodeId || currentNodeId;
+
+        quests.forEach(quest => {
+          if (quest.status !== 'active') return;
+
+          quest.objectives.forEach(objective => {
+            if (objective.completed) return;
+
+            // Check visit objectives
+            if (objective.type === 'visit' && objective.targetId === currentNode) {
+              get().updateQuestObjective(quest.id, objective.id, true);
+              get().addLog({
+                type: 'success',
+                message: `Objective Complete: ${objective.description}`,
+                icon: '✓',
+              });
+            }
+
+            // Check talk objectives
+            if (objective.type === 'talk' && npcId) {
+              if (objective.targetId === npcId) {
+                get().updateQuestObjective(quest.id, objective.id, true);
+                get().addLog({
+                  type: 'success',
+                  message: `Objective Complete: ${objective.description}`,
+                  icon: '✓',
+                });
+              } else if (objective.targetCount && objective.currentCount !== undefined) {
+                // Count-based objectives
+                const newCount = objective.currentCount + 1;
+                const updatedObjective = { ...objective, currentCount: newCount };
+
+                if (newCount >= objective.targetCount) {
+                  get().updateQuestObjective(quest.id, objective.id, true);
+                  get().addLog({
+                    type: 'success',
+                    message: `Objective Complete: ${objective.description}`,
+                    icon: '✓',
+                  });
+                } else {
+                  // Update count without completing
+                  set(state => ({
+                    quests: state.quests.map(q =>
+                      q.id === quest.id
+                        ? {
+                            ...q,
+                            objectives: q.objectives.map(obj =>
+                              obj.id === objective.id ? updatedObjective : obj
+                            ),
+                          }
+                        : q
+                    ),
+                  }));
+                }
+              }
+            }
+
+            // Check explore objectives
+            if (objective.type === 'explore' && action === 'explore') {
+              if (objective.targetCount && objective.currentCount !== undefined) {
+                const newCount = objective.currentCount + 1;
+                const updatedObjective = { ...objective, currentCount: newCount };
+
+                if (newCount >= objective.targetCount) {
+                  get().updateQuestObjective(quest.id, objective.id, true);
+                  get().addLog({
+                    type: 'success',
+                    message: `Objective Complete: ${objective.description}`,
+                    icon: '✓',
+                  });
+                } else {
+                  set(state => ({
+                    quests: state.quests.map(q =>
+                      q.id === quest.id
+                        ? {
+                            ...q,
+                            objectives: q.objectives.map(obj =>
+                              obj.id === objective.id ? updatedObjective : obj
+                            ),
+                          }
+                        : q
+                    ),
+                  }));
+                }
+              }
+            }
+          });
+
+          // Check if quest is now complete
+          const allComplete = quest.objectives
+            .filter(obj => !obj.optional)
+            .every(obj => obj.completed);
+
+          if (allComplete) {
+            get().completeQuest(quest.id);
+          }
+        });
+      },
+
+      getActiveObjectives: () => {
+        const activeQuests = get().activeQuests;
+        const objectives: QuestObjective[] = [];
+
+        activeQuests.forEach(quest => {
+          quest.objectives.forEach(obj => {
+            if (!obj.completed) {
+              objectives.push(obj);
+            }
+          });
+        });
+
+        return objectives;
+      },
     }),
     {
       name: 'henry-james-game',
@@ -914,7 +1208,65 @@ Generated: ${new Date().toLocaleString()}
         player: state.player,
         settings: state.settings,
         completedEvents: state.completedEvents,
+        world: state.world,
+        currentNodeId: state.currentNodeId,
+        agenticNPCs: state.agenticNPCs,
+        quests: state.quests,
+        activeQuests: state.activeQuests,
+        completedQuests: state.completedQuests,
+        gameStarted: state.gameStarted,
+        turnCount: state.turnCount,
+        daysPassed: state.daysPassed,
       }),
+      // Custom serialization for Maps
+      storage: {
+        getItem: (name) => {
+          const str = localStorage.getItem(name);
+          if (!str) return null;
+          const { state } = JSON.parse(str);
+
+          // Reconstruct Map for agenticNPCs
+          if (state.agenticNPCs && Array.isArray(state.agenticNPCs)) {
+            state.agenticNPCs = new Map(state.agenticNPCs);
+          }
+
+          // Reconstruct Map for world.nodes
+          if (state.world?.nodes && Array.isArray(state.world.nodes)) {
+            state.world.nodes = new Map(state.world.nodes);
+          }
+
+          // Reconstruct Sets in player
+          if (state.player?.visitedLocations && Array.isArray(state.player.visitedLocations)) {
+            state.player.visitedLocations = new Set(state.player.visitedLocations);
+          }
+          if (state.player?.defeatedNPCs && Array.isArray(state.player.defeatedNPCs)) {
+            state.player.defeatedNPCs = new Set(state.player.defeatedNPCs);
+          }
+
+          return { state };
+        },
+        setItem: (name, value) => {
+          const { state } = value;
+
+          // Convert Map to Array for serialization
+          const serializable = {
+            ...state,
+            agenticNPCs: state.agenticNPCs ? Array.from(state.agenticNPCs.entries()) : [],
+            world: state.world ? {
+              ...state.world,
+              nodes: Array.from(state.world.nodes.entries()),
+            } : null,
+            player: state.player ? {
+              ...state.player,
+              visitedLocations: Array.from(state.player.visitedLocations),
+              defeatedNPCs: Array.from(state.player.defeatedNPCs),
+            } : state.player,
+          };
+
+          localStorage.setItem(name, JSON.stringify({ state: serializable }));
+        },
+        removeItem: (name) => localStorage.removeItem(name),
+      },
     }
   )
 );

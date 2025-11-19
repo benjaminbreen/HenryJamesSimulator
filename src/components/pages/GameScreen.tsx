@@ -10,6 +10,7 @@ import EventView from '../game/EventView';
 import GameLog from '../game/GameLog';
 import FactCheckPanel from '../game/FactCheckPanel';
 import BookReader from '../game/BookReader';
+import QuestTracker from '../game/QuestTracker';
 
 const GameScreen = () => {
   const { currentView, factCheckVisible, readingBook } = useGameStore();
@@ -49,6 +50,7 @@ const GameScreen = () => {
 
         {/* Sidebar */}
         <div className="space-y-4">
+          <QuestTracker />
           <GameLog />
           {factCheckVisible && <FactCheckPanel />}
         </div>
